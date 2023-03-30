@@ -5,7 +5,7 @@ Linux or Mac
 
 **Installing requirements**:
 ```sh
-sudo apt-get update -y && sudo apt upgrade && sudo bash setup.sh
+sudo apt-get update && sudo apt upgrade -y && sudo bash setup.sh
 ```
 
 **Usage**:
