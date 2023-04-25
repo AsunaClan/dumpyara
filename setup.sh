@@ -1,26 +1,41 @@
 #!/bin/bash
 
 # Determine which command to use for privilege escalation
-if command -v sudo > /dev/null 2>&1; then
+if hash sudo 2>/dev/null; then
     sudo_cmd="sudo"
-elif command -v doas > /dev/null 2>&1; then
+elif hash doas 2>/dev/null; then
     sudo_cmd="doas"
 else
     echo "Neither sudo nor doas found. Please install one of them."
     exit 1
 fi
 
-if [[ "$OSTYPE" == "linux-gnu" ]]; then
-    if [[ "$(command -v apt)" != "" ]]; then
-        $sudo_cmd apt install unace unrar zip unzip p7zip-full p7zip-rar sharutils rar uudeview mpack arj cabextract device-tree-compiler liblzma-dev python3-pip brotli liblz4-tool axel gawk aria2 detox cpio rename liblz4-dev curl -y
-    elif [[ "$(command -v dnf)" != "" ]]; then
-        $sudo_cmd dnf install -y unace unrar zip unzip sharutils uudeview arj cabextract file-roller dtc python3-pip brotli axel aria2 detox cpio lz4 python3-devel xz-devel p7zip p7zip-plugins
-    elif [[ "$(command -v pacman)" != "" ]]; then
-        $sudo_cmd pacman -Sy --noconfirm --needed unace unrar zip unzip p7zip sharutils uudeview arj cabextract file-roller dtc python-pip brotli axel gawk aria2 detox cpio lz4
+# Define package lists for different operating systems
+declare -A package_lists=(
+    ["linux-gnu"]="unace unrar zip unzip p7zip-full p7zip-rar sharutils rar uudeview mpack arj cabextract device-tree-compiler liblzma-dev python3-pip brotli liblz4-tool axel gawk aria2 detox cpio rename liblz4-dev curl"
+    ["darwin"]="protobuf xz brotli lz4 aria2 detox coreutils p7zip gawk"
+)
+
+# Install packages depending on the operating system
+if [[ "${package_lists[$OSTYPE]+exists}" ]]; then
+    packages="${package_lists[$OSTYPE]}"
+    if hash apt-get 2>/dev/null; then
+        $sudo_cmd apt-get update
+        $sudo_cmd apt-get install -y "${packages}"
+    elif hash dnf 2>/dev/null; then
+        $sudo_cmd dnf install -y "${packages}"
+    elif hash pacman 2>/dev/null; then
+        $sudo_cmd pacman -Sy --noconfirm --needed "${packages}"
     fi
+else
+    echo "Unsupported operating system."
+    exit 1
+fi
+
+# Determine pip version
+if hash pip3 2>/dev/null; then
     PIP=pip3
-elif [[ "$OSTYPE" == "darwin"* ]]; then
-    brew install protobuf xz brotli lz4 aria2 detox coreutils p7zip gawk
+else
     PIP=pip
 fi
 
