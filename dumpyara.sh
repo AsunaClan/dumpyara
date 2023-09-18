@@ -117,22 +117,23 @@ done
 # extract PARTITIONS
 cd "$PROJECT_DIR"/working/"${UNZIP_DIR}" || exit
 for p in $PARTITIONS; do
-    if [[ -e "$p.img" ]]; then
-        mkdir "$p" 2> /dev/null || rm -rf "${p:?}"/*
-        echo "Extracting $p partition"
-        7z x "$p".img -y -o"$p"/ > /dev/null 2>&1
-        if [ $? -eq 0 ]; then
+    # Try to extract images via fsck.erofs
+    if [ -f $p.img ] && [ $p != "modem" ]; then
+        echo "Trying to extract $p partition via fsck.erofs."
+        "$PROJECT_DIR"/Firmware_extractor/tools/Linux/bin/fsck.erofs --extract="$p" "$p".img
+        # Deletes images if they were correctly extracted via fsck.erofs
+        if [ -d "$p" ]; then
             rm "$p".img > /dev/null 2>&1
         else
-        #handling erofs images, which can't be handled by 7z
-            if [ -f $p.img ] && [ $p != "modem" ]; then
-                echo "Couldn't extract $p partition by 7z. Using fsck.erofs."
-                rm -rf "${p}"/*
-                "$PROJECT_DIR"/Firmware_extractor/tools/Linux/bin/fsck.erofs --extract="$p" "$p".img
+        # Uses 7z if images could not be extracted via fsck.erofs
+            if [[ -e "$p.img" ]]; then
+                mkdir "$p" 2> /dev/null || rm -rf "${p:?}"/*
+                echo "Extraction via fsck.erofs failed, extracting $p partition via 7z"
+                7z x "$p".img -y -o"$p"/ > /dev/null 2>&1
                 if [ $? -eq 0 ]; then
-                    rm -fv "$p".img > /dev/null 2>&1
+                    rm "$p".img > /dev/null 2>&1
                 else
-                    echo "Couldn't extract $p partition by fsck.erofs. Using mount loop"
+                    echo "Couldn't extract $p partition via 7z. Using mount loop"
                     $sudo_cmd mount -o loop -t auto "$p".img "$p"
                     mkdir "${p}_"
                     $sudo_cmd cp -rf "${p}/"* "${p}_"
@@ -186,25 +187,30 @@ tags=$(grep -oP "(?<=^ro.build.tags=).*" -hs {system,system/system,vendor}/build
 platform=$(grep -oP "(?<=^ro.board.platform=).*" -hs {system,system/system,vendor}/build*.prop)
 [[ -z "${platform}" ]] && platform=$(grep -oP "(?<=^ro.vendor.board.platform=).*" -hs vendor/build*.prop)
 [[ -z "${platform}" ]] && platform=$(grep -oP "(?<=^ro.system.board.platform=).*" -hs {system,system/system}/build*.prop)
-manufacturer=$(grep -oP "(?<=^ro.product.manufacturer=).*" -hs {system,system/system,vendor}/build*.prop)
+manufacturer=$(grep -oP "(?<=^ro.product.odm.manufacturer=).*" -hs odm/etc/build*.prop)
+[[ -z "${manufacturer}" ]] && manufacturer=$(grep -oP "(?<=^ro.product.manufacturer=).*" -hs {system,system/system,vendor}/build*.prop)
 [[ -z "${manufacturer}" ]] && manufacturer=$(grep -oP "(?<=^ro.vendor.product.manufacturer=).*" -hs vendor/build*.prop)
 [[ -z "${manufacturer}" ]] && manufacturer=$(grep -oP "(?<=^ro.system.product.manufacturer=).*" -hs {system,system/system}/build*.prop)
 [[ -z "${manufacturer}" ]] && manufacturer=$(grep -oP "(?<=^ro.product.vendor.manufacturer=).*" -hs vendor/build*.prop)
 [[ -z "${manufacturer}" ]] && manufacturer=$(grep -oP "(?<=^ro.product.system.manufacturer=).*" -hs {system,system/system}/build*.prop)
-fingerprint=$(grep -oP "(?<=^ro.build.fingerprint=).*" -hs {system,system/system,vendor}/build*.prop)
+fingerprint=$(grep -oP "(?<=^ro.odm.build.fingerprint=).*" -hs odm/etc/*build*.prop)
+[[ -z "${fingerprint}" ]] && fingerprint=$(grep -oP "(?<=^ro.build.fingerprint=).*" -hs {system,system/system,vendor}/build*.prop)
 [[ -z "${fingerprint}" ]] && fingerprint=$(grep -oP "(?<=^ro.vendor.build.fingerprint=).*" -hs vendor/build*.prop)
 [[ -z "${fingerprint}" ]] && fingerprint=$(grep -oP "(?<=^ro.system.build.fingerprint=).*" -hs {system,system/system}/build*.prop)
-brand=$(grep -oP "(?<=^ro.product.brand=).*" -hs {vendor,system,system/system}/build*.prop | head -1)
-[[ -z "${brand}" ]] && brand=$(grep -oP "(?<=^ro.product.vendor.brand=).*" -hs vendor/build*.prop | head -1)
-[[ -z "${brand}" ]] && brand=$(grep -oP "(?<=^ro.vendor.product.brand=).*" -hs vendor/build*.prop | head -1)
-[[ -z "${brand}" ]] && brand=$(grep -oP "(?<=^ro.product.system.brand=).*" -hs {system,system/system}/build*.prop | head -1)
-[[ -z "${brand}" ]] && brand=$(echo "$fingerprint" | cut -d / -f1)
-codename=$(grep -oP "(?<=^ro.product.device=).*" -hs {vendor,system,system/system}/build*.prop | head -1)
+codename=$(grep -oP "(?<=^ro.product.odm.device=).*" -hs odm/etc/build*.prop | head -1)
+[[ -z "${codename}" ]] && codename=$(grep -oP "(?<=^ro.product.device=).*" -hs {vendor,system,system/system}/build*.prop | head -1)
 [[ -z "${codename}" ]] && codename=$(grep -oP "(?<=^ro.product.vendor.device=).*" -hs vendor/build*.prop | head -1)
 [[ -z "${codename}" ]] && codename=$(grep -oP "(?<=^ro.vendor.product.device=).*" -hs vendor/build*.prop | head -1)
 [[ -z "${codename}" ]] && codename=$(grep -oP "(?<=^ro.product.system.device=).*" -hs {system,system/system}/build*.prop | head -1)
 [[ -z "${codename}" ]] && codename=$(echo "$fingerprint" | cut -d / -f3 | cut -d : -f1)
 [[ -z "${codename}" ]] && codename=$(grep -oP "(?<=^ro.build.fota.version=).*" -hs {system,system/system}/build*.prop | cut -d - -f1 | head -1)
+brand=$(grep -oP "(?<=^ro.product.odm.brand=).*" -hs odm/etc/${codename}_build.prop | head -1)
+[[ -z "${brand}" ]] && brand=$(grep -oP "(?<=^ro.product.odm.brand=).*" -hs odm/etc/build*.prop | head -1)
+[[ -z "${brand}" ]] && brand=$(grep -oP "(?<=^ro.product.brand=).*" -hs {vendor,system,system/system}/build*.prop | head -1)
+[[ -z "${brand}" ]] && brand=$(grep -oP "(?<=^ro.product.vendor.brand=).*" -hs vendor/build*.prop | head -1)
+[[ -z "${brand}" ]] && brand=$(grep -oP "(?<=^ro.vendor.product.brand=).*" -hs vendor/build*.prop | head -1)
+[[ -z "${brand}" ]] && brand=$(grep -oP "(?<=^ro.product.system.brand=).*" -hs {system,system/system}/build*.prop | head -1)
+[[ -z "${brand}" ]] && brand=$(echo "$fingerprint" | cut -d / -f1)
 description=$(grep -oP "(?<=^ro.build.description=).*" -hs {system,system/system,vendor}/build*.prop)
 [[ -z "${description}" ]] && description=$(grep -oP "(?<=^ro.vendor.build.description=).*" -hs vendor/build*.prop)
 [[ -z "${description}" ]] && description=$(grep -oP "(?<=^ro.system.build.description=).*" -hs {system,system/system}/build*.prop)
@@ -219,17 +225,14 @@ manufacturer=$(echo "$manufacturer" | tr '[:upper:]' '[:lower:]' | tr -dc '[:pri
 printf "# %s\n- manufacturer: %s\n- platform: %s\n- codename: %s\n- flavor: %s\n- release: %s\n- id: %s\n- incremental: %s\n- tags: %s\n- fingerprint: %s\n- is_ab: %s\n- brand: %s\n- branch: %s\n- repo: %s\n" "$description" "$manufacturer" "$platform" "$codename" "$flavor" "$release" "$id" "$incremental" "$tags" "$fingerprint" "$is_ab" "$brand" "$branch" "$repo" > "$PROJECT_DIR"/working/"${UNZIP_DIR}"/README.md
 cat "$PROJECT_DIR"/working/"${UNZIP_DIR}"/README.md
 
-# create TWRP device tree if possible
-if [[ "$is_ab" = true ]]; then
-    twrpimg="$PROJECT_DIR"/working/"${UNZIP_DIR}"/"boot.img"
-else
-    twrpimg="$PROJECT_DIR"/working/"${UNZIP_DIR}"/"recovery.img"
-fi
-if [[ -f "${twrpimg}" ]]; then
-    twrpdt="$PROJECT_DIR"/working/"${UNZIP_DIR}"/twrp-device-tree
-    python3 -m twrpdtgen "$twrpimg" --output "$twrpdt"
-    if [[ "$?" = 0 ]]; then
-        [[ ! -e "$twrpdt"/README.md ]] && curl https://raw.githubusercontent.com/wiki/SebaUbuntu/TWRP-device-tree-generator/4.-Build-TWRP-from-source.md > "$twrpdt"/README.md
+# Generate AOSP device tree
+if python3 -c "import aospdtgen"; then
+    echo "aospdtgen installed, generating device tree"
+    mkdir -p "${PROJECT_DIR}/working/${UNZIP_DIR}/aosp-device-tree"
+    if python3 -m aospdtgen . --output "${PROJECT_DIR}/working/${UNZIP_DIR}/aosp-device-tree"; then
+        echo "AOSP device tree successfully generated"
+    else
+        echo "Failed to generate AOSP device tree"
     fi
 fi
 
